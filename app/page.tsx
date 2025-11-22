@@ -264,9 +264,9 @@ export default function Home() {
         onDeleteChat={handleDeleteChat}
       />
       
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="border-b border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 flex items-center justify-between shadow-lg">
+        <header className="fixed lg:static top-0 left-0 right-0 lg:right-auto z-30 border-b border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -307,7 +307,7 @@ export default function Home() {
         </header>
 
         {/* Messages */}
-        <main className="flex-1 overflow-y-auto px-4 py-6">
+        <main className="flex-1 overflow-y-auto px-4 py-6 pt-20 lg:pt-6 pb-24 lg:pb-6">
           {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center space-y-6 max-w-2xl">
@@ -378,7 +378,7 @@ export default function Home() {
         </main>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-3 sm:p-4 shadow-lg">
+        <form onSubmit={handleSubmit} className="fixed lg:static bottom-0 left-0 right-0 lg:right-auto border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-3 sm:p-4 shadow-lg z-20">
           <div className="max-w-3xl mx-auto space-y-3">
             {/* Temporarily hidden: File upload preview */}
             {false && selectedFile && (
