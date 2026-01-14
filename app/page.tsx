@@ -31,6 +31,7 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedModel, setSelectedModel] = useState(() => storage.getSelectedModel())
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [newMessageIndices, setNewMessageIndices] = useState<Set<number>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -52,6 +53,8 @@ export default function Home() {
       if (chat) {
         setCurrentChatId(chat.id)
         setMessages(chat.messages)
+        // Clear new message indices when loading from history
+        setNewMessageIndices(new Set())
       }
     }
   }, [])
@@ -187,14 +190,24 @@ export default function Home() {
         throw new Error(data.error)
       }
 
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.message }])
+      setMessages((prev) => {
+        const newIndex = prev.length
+        // Mark the new assistant message as new for typing animation
+        setNewMessageIndices((prevIndices) => new Set([...prevIndices, newIndex]))
+        return [...prev, { role: 'assistant', content: data.message }]
+      })
     } catch (error: any) {
       console.error('Error:', error)
       const errorMessage = error.message || 'Sorry, I encountered an error. Please try again.'
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `Error: ${errorMessage}` },
-      ])
+      setMessages((prev) => {
+        const newIndex = prev.length
+        // Mark error message as new for typing animation
+        setNewMessageIndices((prevIndices) => new Set([...prevIndices, newIndex]))
+        return [
+          ...prev,
+          { role: 'assistant', content: `Error: ${errorMessage}` },
+        ]
+      })
     } finally {
       setIsLoading(false)
     }
@@ -204,6 +217,7 @@ export default function Home() {
     setMessages([])
     setInput('')
     setCurrentChatId(null)
+    setNewMessageIndices(new Set())
     storage.setCurrentChatId(null)
   }
 
@@ -212,6 +226,8 @@ export default function Home() {
     if (chat) {
       setCurrentChatId(chat.id)
       setMessages(chat.messages)
+      // Clear new message indices when loading from history
+      setNewMessageIndices(new Set())
       storage.setCurrentChatId(chat.id)
       setSidebarOpen(false)
     }
@@ -253,7 +269,7 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950 text-gray-100">
+    <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950 text-gray-100 overflow-x-hidden">
       <Sidebar 
         isOpen={sidebarOpen} 
         onClose={() => setSidebarOpen(false)}
@@ -307,7 +323,7 @@ export default function Home() {
         </header>
 
         {/* Messages */}
-        <main className="flex-1 overflow-y-auto px-4 py-6 pt-20 lg:pt-6 pb-24 lg:pb-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 pt-28 lg:pt-6" style={{ paddingBottom: '140px' }}>
           {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center space-y-6 max-w-2xl">
@@ -332,20 +348,39 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-full lg:max-w-3xl mx-auto w-full pt-2">
               {messages.map((message, index) => (
                 <ChatMessage
                   key={index}
                   message={message}
                   messageIndex={index}
+                  isNew={newMessageIndices.has(index)}
                   onEdit={(idx, newContent) => {
                     const newMessages = [...messages]
                     newMessages[idx] = { ...newMessages[idx], content: newContent }
                     setMessages(newMessages)
+                    // Remove from new indices when edited
+                    setNewMessageIndices((prev) => {
+                      const next = new Set(prev)
+                      next.delete(idx)
+                      return next
+                    })
                   }}
                   onDelete={(idx) => {
                     const newMessages = messages.filter((_, i) => i !== idx)
                     setMessages(newMessages)
+                    // Remove from new indices and adjust indices
+                    setNewMessageIndices((prev) => {
+                      const next = new Set<number>()
+                      prev.forEach((i) => {
+                        if (i < idx) {
+                          next.add(i)
+                        } else if (i > idx) {
+                          next.add(i - 1)
+                        }
+                      })
+                      return next
+                    })
                   }}
                   onRegenerate={async () => {
                     if (index > 0) {
@@ -361,6 +396,8 @@ export default function Home() {
                         if (response.ok && !data.error) {
                           const newMessages = [...messagesToRegenerate, { role: 'assistant' as const, content: data.message }]
                           setMessages(newMessages)
+                          // Mark regenerated message as new
+                          setNewMessageIndices(new Set([messagesToRegenerate.length]))
                         }
                       } catch (error) {
                         console.error('Regenerate error:', error)
@@ -378,7 +415,7 @@ export default function Home() {
         </main>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="fixed lg:static bottom-0 left-0 right-0 lg:right-auto border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-3 sm:p-4 shadow-lg z-20">
+        <form onSubmit={handleSubmit} className="fixed bottom-0 left-0 right-0 lg:left-64 border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-3 sm:p-4 shadow-2xl z-[100]">
           <div className="max-w-3xl mx-auto space-y-3">
             {/* Temporarily hidden: File upload preview */}
             {false && selectedFile && (

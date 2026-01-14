@@ -1,7 +1,7 @@
 'use client'
 
 import { User, Bot, Copy, Check } from 'lucide-react'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism'
@@ -14,18 +14,128 @@ interface ChatMessageProps {
     content: string
   }
   messageIndex: number
+  isNew?: boolean
   onEdit?: (index: number, newContent: string) => void
   onDelete?: (index: number) => void
   onRegenerate?: () => void
 }
 
-export default function ChatMessage({ message, messageIndex, onEdit, onDelete, onRegenerate }: ChatMessageProps) {
+export default function ChatMessage({ message, messageIndex, isNew = false, onEdit, onDelete, onRegenerate }: ChatMessageProps) {
   const isUser = message.role === 'user'
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [showActions, setShowActions] = useState(false)
+  // Initialize displayedText: empty for new assistant messages, full content otherwise
+  const [displayedText, setDisplayedText] = useState<string>(() => {
+    if (isUser || !isNew) {
+      return message.content
+    }
+    return ''
+  })
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
   
   // Generate a stable ID for this message's code blocks
   const messageId = useMemo(() => Math.random().toString(36).substr(2, 9), [message.content])
+  
+  // Typing animation for assistant messages
+  useEffect(() => {
+    // Skip animation for user messages or if message is not new
+    if (isUser || !isNew) {
+      setDisplayedText(message.content)
+      return
+    }
+    
+    // Reset displayed text when message changes
+    setDisplayedText('')
+    
+    // Find all code blocks in the message to render them instantly
+    const codeBlockPattern = /```[\s\S]*?```/g
+    const codeBlocks: Array<{ start: number; end: number }> = []
+    let match
+    while ((match = codeBlockPattern.exec(message.content)) !== null) {
+      codeBlocks.push({ start: match.index, end: match.index + match[0].length })
+    }
+    
+    // Split content into words while preserving spaces
+    const words = message.content.split(/(\s+)/)
+    let currentIndex = 0
+    
+    const typeNextWord = () => {
+      if (currentIndex >= words.length) {
+        // Animation complete
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+        return
+      }
+      
+      // Build what the text would look like after adding this word
+      const textBefore = words.slice(0, currentIndex).join('')
+      const textAfter = textBefore + words[currentIndex]
+      const textAfterLen = textAfter.length
+      
+      // Check if we're inside any code block (more aggressive check)
+      const currentCodeBlock = codeBlocks.find(
+        (block) => {
+          // We're inside if we've passed the start but haven't reached the end
+          return textAfterLen >= block.start && textAfterLen < block.end
+        }
+      )
+      
+      if (currentCodeBlock) {
+        // We're inside a code block - render the complete block immediately to prevent blinking
+        setDisplayedText(message.content.substring(0, currentCodeBlock.end))
+        
+        // Skip ahead to after the code block
+        let tempLength = 0
+        for (let i = 0; i < words.length; i++) {
+          tempLength += words[i].length
+          if (tempLength >= currentCodeBlock.end) {
+            currentIndex = i + 1
+            return
+          }
+        }
+      } else {
+        // Check if we're about to enter a code block (just crossed the start boundary)
+        const enteringBlock = codeBlocks.find(
+          (block) => {
+            const textBeforeLen = textBefore.length
+            return textBeforeLen < block.start && textAfterLen >= block.start && textAfterLen < block.end
+          }
+        )
+        
+        if (enteringBlock) {
+          // We just entered a code block - render it completely
+          setDisplayedText(message.content.substring(0, enteringBlock.end))
+          
+          // Skip ahead to after the code block
+          let tempLength = 0
+          for (let i = 0; i < words.length; i++) {
+            tempLength += words[i].length
+            if (tempLength >= enteringBlock.end) {
+              currentIndex = i + 1
+              return
+            }
+          }
+        } else {
+          // Normal typing - not in a code block
+          setDisplayedText(textAfter)
+          currentIndex++
+        }
+      }
+    }
+    
+    // Start typing animation with ~20ms delay per word (faster speed)
+    intervalRef.current = setInterval(typeNextWord, 20)
+    
+    // Cleanup on unmount or when message changes
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [message.content, isUser, isNew])
 
   const copyToClipboard = (code: string, id: string) => {
     navigator.clipboard.writeText(code)
@@ -91,7 +201,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
         {isUser ? <User size={18} /> : <Bot size={18} />}
       </motion.div>
       <div
-        className={`flex-1 ${isUser ? 'text-right' : ''}`}
+        className={`flex-1 min-w-0 ${isUser ? 'text-right' : ''}`}
         onMouseEnter={() => setShowActions(true)}
         onMouseLeave={() => setShowActions(false)}
       >
@@ -99,7 +209,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
           initial={{ scale: 0.95 }}
           animate={{ scale: 1 }}
           transition={{ duration: 0.2 }}
-          className={`inline-block rounded-lg max-w-3xl ${
+          className={`block rounded-lg max-w-full lg:max-w-3xl w-full ${
             isUser
               ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 shadow-lg shadow-blue-500/20'
               : 'bg-transparent text-gray-100 px-1'
@@ -129,14 +239,14 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                   )
                 }
                 return (
-                  <div key={idx} className="whitespace-pre-wrap break-words">
+                  <div key={idx} className="whitespace-pre-wrap break-words break-all overflow-wrap-anywhere">
                     {part.content}
                   </div>
                 )
               })}
             </div>
           ) : (
-            <div className="prose prose-invert max-w-none leading-relaxed">
+            <div className="prose prose-invert max-w-none leading-relaxed break-words overflow-wrap-anywhere">
               <ReactMarkdown
                 components={{
                   code({ node, inline, className, children, ...props }: any) {
@@ -177,7 +287,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                             )}
                           </motion.button>
                         </div>
-                        <div className="overflow-hidden rounded-b-lg">
+                        <div className="overflow-x-auto rounded-b-lg">
                           <SyntaxHighlighter
                             style={vscDarkPlus}
                             language={match[1]}
@@ -189,6 +299,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                               fontSize: '0.875rem',
                               lineHeight: '1.6',
                               fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', 'Menlo', 'Consolas', monospace",
+                              minWidth: 'max-content',
                             }}
                             codeTagProps={{
                               style: {
@@ -211,7 +322,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                     )
                   },
                   p({ children }) {
-                    return <p className="mb-4 last:mb-0 leading-relaxed">{children}</p>
+                    return <p className="mb-4 last:mb-0 leading-relaxed break-words overflow-wrap-anywhere">{children}</p>
                   },
                   ul({ children }) {
                     return <ul className="list-disc list-outside mb-4 ml-6 space-y-2">{children}</ul>
@@ -244,7 +355,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                         href={href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
+                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all"
                       >
                         {children}
                       </a>
@@ -252,7 +363,7 @@ export default function ChatMessage({ message, messageIndex, onEdit, onDelete, o
                   },
                 }}
               >
-                {message.content}
+                {displayedText}
               </ReactMarkdown>
             </div>
           )}
