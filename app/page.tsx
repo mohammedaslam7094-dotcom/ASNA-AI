@@ -125,12 +125,12 @@ export default function Home() {
 
                 // More aggressive compression: quality 0.5 and try different formats
                 let compressedBase64 = canvas.toDataURL('image/jpeg', 0.5)
-                
+
                 // If still too large, try even lower quality
                 if (compressedBase64.length > 50000) {
                   compressedBase64 = canvas.toDataURL('image/jpeg', 0.3)
                 }
-                
+
                 resolve(compressedBase64)
               }
               img.onerror = reject
@@ -139,7 +139,7 @@ export default function Home() {
             reader.onerror = reject
             reader.readAsDataURL(selectedFile)
           })
-          
+
           // Only include image if it's reasonably sized (less than 50KB base64 to stay within token limits)
           // Base64 is ~4/3 the size of binary, so 50KB base64 ≈ 37KB binary ≈ ~9,000 tokens
           if (compressedBase64.length < 50000) {
@@ -193,7 +193,11 @@ export default function Home() {
       setMessages((prev) => {
         const newIndex = prev.length
         // Mark the new assistant message as new for typing animation
-        setNewMessageIndices((prevIndices) => new Set([...prevIndices, newIndex]))
+        setNewMessageIndices((prevIndices) => {
+          const newSet = new Set(prevIndices)
+          newSet.add(newIndex)
+          return newSet
+        })
         return [...prev, { role: 'assistant', content: data.message }]
       })
     } catch (error: any) {
@@ -202,7 +206,11 @@ export default function Home() {
       setMessages((prev) => {
         const newIndex = prev.length
         // Mark error message as new for typing animation
-        setNewMessageIndices((prevIndices) => new Set([...prevIndices, newIndex]))
+        setNewMessageIndices((prevIndices) => {
+          const newSet = new Set(prevIndices)
+          newSet.add(newIndex)
+          return newSet
+        })
         return [
           ...prev,
           { role: 'assistant', content: `Error: ${errorMessage}` },
@@ -270,8 +278,8 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-950 text-gray-100 overflow-x-hidden">
-      <Sidebar 
-        isOpen={sidebarOpen} 
+      <Sidebar
+        isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onNewChat={handleNewChat}
         chats={chats}
@@ -279,7 +287,7 @@ export default function Home() {
         onLoadChat={handleLoadChat}
         onDeleteChat={handleDeleteChat}
       />
-      
+
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="fixed lg:static top-0 left-0 right-0 lg:right-auto z-30 border-b border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 flex items-center justify-between shadow-lg">
